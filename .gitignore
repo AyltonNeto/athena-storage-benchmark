@@ -1,0 +1,21 @@
+# Dados brutos (públicos e volumosos - não versionar)
+*.csv
+!resultados/*.csv
+data/
+dados_brutos/
+dados_limpos/
+*.gz
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Ambiente
+.env
+.DS_Store
+
+# Credenciais AWS (NUNCA versionar)
+.aws/
+credentials
+*.pem
