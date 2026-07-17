@@ -27,18 +27,20 @@ Um teste complementar de consolidação de arquivos mostrou ainda que o *small f
 
 ### Matriz de layouts
 
-| Layout | Formato | Particionado | Codec |
-|---|---|---|---|
-| csv_base | CSV | Não | — |
-| csv_particionado | CSV | Sim | — |
-| parquet_snappy | Parquet | Não | Snappy |
-| parquet_snappy_part | Parquet | Sim | Snappy |
-| parquet_gzip | Parquet | Não | GZIP |
-| parquet_gzip_part | Parquet | Sim | GZIP |
-| parquet_zstd | Parquet | Não | ZSTD |
-| parquet_zstd_part | Parquet | Sim | ZSTD |
-| parquet_gzip_unico | Parquet | Não | GZIP (1 arquivo) |
-| parquet_gzip_part_unico | Parquet | Sim | GZIP (1 arq/partição) |
+| Layout | Formato | Particionado | Codec | Arquivos |
+|---|---|---|---|---|
+| csv_base | CSV | Não | — | 1 |
+| csv_particionado | CSV | Sim | — | 360 |
+| parquet_snappy | Parquet | Não | Snappy | 10 |
+| parquet_snappy_part | Parquet | Sim | Snappy | 360 |
+| parquet_gzip | Parquet | Não | GZIP | 10 |
+| parquet_gzip_part | Parquet | Sim | GZIP | 360 |
+| parquet_zstd | Parquet | Não | ZSTD | 10 |
+| parquet_zstd_part | Parquet | Sim | ZSTD | 360 |
+| parquet_gzip_unico | Parquet | Não | GZIP | 1 |
+| parquet_gzip_part_unico | Parquet | Sim | GZIP | 36 |
+
+Os dois últimos pertencem ao teste de consolidação (isolam a fragmentação em arquivos).
 
 ---
 
@@ -51,8 +53,7 @@ Um teste complementar de consolidação de arquivos mostrou ainda que o *small f
 │   ├── 02_athena_setup_baseline.sql    Database + tabela externa do CSV base
 │   ├── 03_athena_geracao_layouts.sql   CTAS dos 8 layouts (formato × partição × codec)
 │   ├── 04_athena_benchmark_marcado.sql As 6 consultas × 8 layouts, com marcadores
-│   ├── 05_corrige_csv_particionado.sql Correção do CSV particionado (compressão nula)
-│   └── 06_layouts_unicos_gzip.sql      Teste de consolidação (bucketing, 2 layouts)
+│   └── 05_layouts_unicos_gzip.sql      Teste de causalidade da fragmentação (bucketing)
 ├── resultados/
 │   ├── medicoes_completas.csv          As 5 execuções de cada combinação (60 linhas)
 │   └── resumo_medianas.csv             Mediana e desvio por combinação
@@ -72,28 +73,28 @@ Baixe os arquivos mensais de Despesas — Execução da Despesa em
 <https://portaldatransparencia.gov.br/download-de-dados/despesas-execucao>
 para o período de janeiro/2023 a dezembro/2025 (36 arquivos CSV).
 
-> Os dados brutos não são versionados neste repositório por serem públicos e volumosos (~1,7 GB). O script de preparação assume os CSVs mensais como entrada.
+> Os dados brutos não são versionados neste repositório por serem públicos e volumosos (~1,7 GB).
 
 ### 2. Preparar os dados
 ```bash
 python -m venv .venv
 source .venv/bin/activate        # Windows: .\.venv\Scripts\activate
-pip install pandas pyarrow
+pip install pandas
 python scripts/01_limpeza_dados_brutos.py
 ```
-Isso consolida os 36 arquivos, corrige o encoding (ISO-8859-1 → UTF-8), normaliza os valores monetários e deriva as colunas de partição. Saída: um CSV consolidado com soma de controle **R$ 13.483.863.145.256,05** (âncora de integridade).
+Consolida os 36 arquivos, corrige o encoding (ISO-8859-1 → UTF-8), normaliza os valores monetários e deriva as colunas de partição. Soma de controle esperada (valor_pago): **R$ 13.483.863.145.256,05**.
 
 ### 3. Configurar o ambiente AWS
-Veja [`docs/ambiente_aws.md`](docs/ambiente_aws.md) para região, bucket, salvaguardas de custo e configuração do Athena.
+Veja [`docs/ambiente_aws.md`](docs/ambiente_aws.md) para região, bucket, salvaguardas de custo e protocolo de medição. Os scripts SQL usam `<bucket>` como marcador — substitua pelo nome do seu bucket.
 
-### 4. Gerar os layouts e executar o benchmark
-Execute, na ordem, os scripts SQL de `scripts/` no editor do Athena. Cada consulta reporta o volume varrido e o tempo; registre-os conforme o protocolo (cache desabilitado, 5 execuções por combinação).
+### 4. Executar no Athena
+Rode os scripts SQL na ordem (02 → 03 → 04 → 05). Cada consulta de benchmark reporta o volume varrido e o tempo; registre-os conforme o protocolo (cache desabilitado, 5 execuções por combinação).
 
 ---
 
 ## Stack
 
-`Python (pandas, pyarrow)` · `Amazon S3` · `Amazon Athena (Presto/Trino)` · `Apache Parquet` · `SQL`
+`Python (pandas)` · `Amazon S3` · `Amazon Athena (Presto/Trino)` · `Apache Parquet` · `SQL`
 
 ---
 

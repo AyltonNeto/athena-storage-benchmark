@@ -1,20 +1,17 @@
 -- =============================================================================
 --  02_athena_setup_baseline.sql
---  SETUP DO EXPERIMENTO — database + tabela do CSV base (recomeço limpo)
+--  Criação do database e da tabela externa sobre o CSV base (baseline).
 -- =============================================================================
 --  Pré-requisitos:
 --    - Região: us-east-1
---    - Local de resultados do Athena: s3://projeto-mbed4/athena-results/
---    - O CSV base já está em: s3://projeto-mbed4/01-raw-csv/despesas_baseline.csv
+--    - Local de resultados do Athena: s3://<bucket>/athena-results/
+--    - CSV base consolidado em:       s3://<bucket>/01-raw-csv/despesas_baseline.csv
+--      (gerado pelo script 01_limpeza_dados_brutos.py)
 --
---  IMPORTANTE (limpeza do experimento anterior):
---    Se você recriou o bucket ou moveu o CSV, ajuste o LOCATION abaixo.
---    Se ainda existirem as tabelas antigas, remova-as antes (opcional):
---      DROP TABLE IF EXISTS projeto_despesas.despesas_csv;
---      DROP TABLE IF EXISTS projeto_despesas.despesas_parquet_simples;
---      DROP TABLE IF EXISTS projeto_despesas.despesas_parquet_particionado;
---      DROP TABLE IF EXISTS projeto_despesas.despesas_parquet_zstd;
---    E esvazie as pastas 01 a 05 no S3 (o CTAS não sobrescreve pasta com dado).
+--  A tabela csv_base é o ponto de partida único do experimento: todos os demais
+--  layouts (script 03) derivam dela, o que garante dado idêntico entre eles.
+--  Tipagem: códigos e nomes como STRING (preserva zeros à esquerda); as seis
+--  colunas de valor como DOUBLE.
 -- =============================================================================
 
 
@@ -22,9 +19,7 @@
 CREATE DATABASE IF NOT EXISTS projeto_despesas;
 
 
--- 2) Tabela do CSV base (Layout 1). Só lê o arquivo, não copia dado.
---    Tipagem: códigos/nomes como STRING (preserva zeros à esquerda);
---             as 6 colunas de valor como DOUBLE.
+-- 2) Tabela externa sobre o CSV base. Apenas referencia o arquivo; não copia dado.
 CREATE EXTERNAL TABLE IF NOT EXISTS projeto_despesas.csv_base (
   ano_mes_lancamento                  string,
   codigo_orgao_superior               string,
@@ -78,11 +73,11 @@ CREATE EXTERNAL TABLE IF NOT EXISTS projeto_despesas.csv_base (
 )
 ROW FORMAT DELIMITED
   FIELDS TERMINATED BY ';'
-LOCATION 's3://projeto-mbed4/01-raw-csv/'
+LOCATION 's3://<bucket>/01-raw-csv/'
 TBLPROPERTIES ('skip.header.line.count'='1');
 
 
--- 3) Validação do baseline. Deve retornar:
---    total_linhas = 2381305 | soma_valor_pago = 13483863145256.05
+-- 3) Validação de integridade do baseline.
+--    Esperado: total_linhas = 2381305 | soma_valor_pago = 13483863145256.05
 SELECT COUNT(*) AS total_linhas, SUM(valor_pago) AS soma_valor_pago
 FROM projeto_despesas.csv_base;

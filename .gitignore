@@ -3,7 +3,6 @@
 !resultados/*.csv
 data/
 dados_brutos/
-dados_limpos/
 *.gz
 
 # Python

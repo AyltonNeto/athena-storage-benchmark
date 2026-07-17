@@ -1,43 +1,46 @@
 -- =============================================================================
---  09_layouts_unicos_gzip.sql
---  TESTE DE CAUSALIDADE - isolar FRAGMENTACAO de PARTICIONAMENTO
---  Codec: GZIP (padrao do Athena). Cria 2 layouts consolidados (1 arquivo).
---  Metodo: BUCKETING (bucket_count = 1) - recomendado pela documentacao AWS.
+--  05_layouts_unicos_gzip.sql
+--  Teste de causalidade: isolar a fragmentação de arquivos do particionamento.
 -- =============================================================================
---  QUARTETO DE COMPARACAO (2 ja existem, 2 criados aqui):
---    parquet_gzip            ja existe   | nao part. | 10 arquivos
---    parquet_gzip_part       ja existe   | part.     | 360 arquivos
---    parquet_gzip_unico      NOVO (09)   | nao part. | 1 arquivo
---    parquet_gzip_part_unico NOVO (10)   | part.     | 36 arquivos (1/particao)
+--  Objetivo:
+--    Os layouts particionados são gravados com 10 arquivos por partição (360 no
+--    total), efeito do paralelismo de escrita do motor. Este script cria dois
+--    layouts equivalentes em GZIP, porém consolidados em um único arquivo por
+--    partição, permitindo verificar quanto da diferença observada se deve à
+--    fragmentação e quanto ao particionamento em si.
 --
---  METODO - por que bucketing:
---    A AWS documenta o bucketing como a forma de controlar o numero de arquivos
---    de saida de um CTAS. Com bucket_count = 1 pedimos 1 arquivo por particao
---    (ou 1 arquivo total, se nao particionado). A chave de bucket deve ser uma
---    coluna de ALTA CARDINALIDADE e NAO pode ser coluna de particao - usamos
---    nome_orgao_superior (dezenas de valores distintos, bem distribuido).
+--  Quarteto de comparação (os dois primeiros são criados no script 03):
+--    parquet_gzip            não particionado | 10 arquivos
+--    parquet_gzip_part       particionado     | 360 arquivos
+--    parquet_gzip_unico      não particionado | 1 arquivo       (este script)
+--    parquet_gzip_part_unico particionado     | 36 arquivos     (este script)
 --
---  LIMITE RESPEITADO:
---    Athena permite no maximo 100 particoes/buckets por CTAS.
---    Layout 10: 36 particoes x 1 bucket = 36  (OK, <= 100).
---    Layout 09: 0 particoes  x 1 bucket = 1   (OK).
+--  Método (bucketing):
+--    A documentação da AWS indica o bucketing como forma de controlar o número
+--    de arquivos de saída de um CTAS. Com bucket_count = 1 obtém-se um arquivo
+--    por partição (ou um arquivo único, quando não há partição). A chave de
+--    bucket deve ser uma coluna de alta cardinalidade e não pode coincidir com
+--    a chave de partição; utiliza-se nome_orgao_superior.
 --
---  RESSALVA (documentada pela AWS): o numero de arquivos criados pode nao
---  corresponder EXATAMENTE ao bucket_count. Por isso conferimos no S3 (ver fim).
+--  Limite do Athena: no máximo 100 combinações de partição/bucket por CTAS.
+--    parquet_gzip_part_unico: 36 partições × 1 bucket = 36 (dentro do limite).
 --
---  As COLUNAS e a logica sao IDENTICAS ao 03_athena_geracao_layouts.sql.
---  As 6 queries de benchmark NAO mudam - so troca o nome da tabela.
+--  Observação: a AWS registra que o número de arquivos pode não corresponder
+--  exatamente ao bucket_count; a contagem real deve ser conferida no S3.
+--
+--  As colunas e a lógica são idênticas às do script 03. As seis consultas de
+--  benchmark (script 04) permanecem inalteradas — muda apenas o nome da tabela.
 -- =============================================================================
 
 
 -- -----------------------------------------------------------------------------
--- LAYOUT 09 - parquet_gzip_unico  (Parquet, NAO particionado, GZIP, 1 arquivo)
+-- parquet_gzip_unico  —  Parquet, não particionado, GZIP, arquivo único
 -- -----------------------------------------------------------------------------
 CREATE TABLE projeto_despesas.parquet_gzip_unico
 WITH (
   format = 'PARQUET',
   write_compression = 'GZIP',
-  external_location = 's3://projeto-mbed4/09-parquet-gzip-unico/',
+  external_location = 's3://<bucket>/09-parquet-gzip-unico/',
   bucketed_by = ARRAY['nome_orgao_superior'],
   bucket_count = 1
 ) AS
@@ -62,16 +65,16 @@ FROM projeto_despesas.csv_base;
 
 
 -- -----------------------------------------------------------------------------
--- LAYOUT 10 - parquet_gzip_part_unico  (Parquet, particionado, GZIP, 1 arq/part)
+-- parquet_gzip_part_unico  —  Parquet, particionado, GZIP, 1 arquivo/partição
+-- Quando se combinam partição e bucketing, o particionamento define as pastas e
+-- o bucketing atua dentro de cada uma; com bucket_count = 1, cada uma das 36
+-- partições recebe um arquivo (36 no total).
 -- -----------------------------------------------------------------------------
--- NOTA: quando se combina particao + bucketing, o particionamento vem primeiro
--- (define as pastas) e o bucketing atua DENTRO de cada particao. Com bucket_count
--- = 1, cada uma das 36 particoes recebe 1 arquivo -> 36 arquivos no total.
 CREATE TABLE projeto_despesas.parquet_gzip_part_unico
 WITH (
   format = 'PARQUET',
   write_compression = 'GZIP',
-  external_location = 's3://projeto-mbed4/10-parquet-gzip-part-unico/',
+  external_location = 's3://<bucket>/10-parquet-gzip-part-unico/',
   partitioned_by = ARRAY['ano', 'mes'],
   bucketed_by = ARRAY['nome_orgao_superior'],
   bucket_count = 1
@@ -97,7 +100,7 @@ FROM projeto_despesas.csv_base;
 
 
 -- =============================================================================
---  VALIDACAO DE INTEGRIDADE (rodar apos criar) - deve dar 2381305 e a soma ancora
+--  Validação de integridade — 2381305 linhas e a soma de controle em ambos.
 -- =============================================================================
 SELECT 'parquet_gzip_unico'      AS layout, COUNT(*) AS linhas, SUM(valor_pago) AS soma
 FROM projeto_despesas.parquet_gzip_unico
@@ -105,24 +108,21 @@ UNION ALL
 SELECT 'parquet_gzip_part_unico', COUNT(*), SUM(valor_pago)
 FROM projeto_despesas.parquet_gzip_part_unico;
 
--- Se o particionado retornar 0 linhas logo apos criar:
+-- Para o layout particionado, caso retorne 0 linhas logo após a criação:
 --   MSCK REPAIR TABLE projeto_despesas.parquet_gzip_part_unico;
 
 
 -- =============================================================================
---  CONFERENCIA NO S3 (contagem de arquivos de dados, ignorando o marcador de pasta)
+--  Conferência no S3 (contagem de arquivos de dados, ignorando o marcador de pasta):
 --    09-parquet-gzip-unico/       -> esperado: 1 arquivo
 --    10-parquet-gzip-part-unico/  -> esperado: 36 arquivos (1 por ano=XXXX/mes=YY)
---
---  Se as contagens nao baterem exatamente (a AWS avisa que bucket_count nem
---  sempre e exato), me avise - mas mesmo 1-2 arquivos por particao ja reduz
---  drasticamente a fragmentacao de 10/particao e serve ao teste.
 -- =============================================================================
 
 
 -- =============================================================================
---  BENCHMARK - as MESMAS 6 queries do 05, trocando so o nome da tabela.
---  5 execucoes cada, cache DESLIGADO. Anotar tempo e MB varrido na planilha.
+--  Benchmark — executar as seis consultas do script 04 sobre os dois layouts,
+--  trocando apenas o nome da tabela. Cinco execuções por consulta, com o cache
+--  do Athena desabilitado; registrar tempo e volume varrido.
 -- =============================================================================
 
 -- Q1
@@ -132,43 +132,29 @@ SELECT /* Q1_parquet_gzip_part_unico */ nome_orgao_superior, nome_funcao, valor_
 FROM projeto_despesas.parquet_gzip_part_unico;
 
 -- Q2
-SELECT /* Q2_parquet_gzip_unico */ *
-FROM projeto_despesas.parquet_gzip_unico;
-SELECT /* Q2_parquet_gzip_part_unico */ *
-FROM projeto_despesas.parquet_gzip_part_unico;
+SELECT /* Q2_parquet_gzip_unico */ * FROM projeto_despesas.parquet_gzip_unico;
+SELECT /* Q2_parquet_gzip_part_unico */ * FROM projeto_despesas.parquet_gzip_part_unico;
 
 -- Q3
 SELECT /* Q3_parquet_gzip_unico */ nome_orgao_superior, valor_pago
-FROM projeto_despesas.parquet_gzip_unico
-WHERE ano = '2024' AND mes = '03';
+FROM projeto_despesas.parquet_gzip_unico WHERE ano = '2024' AND mes = '03';
 SELECT /* Q3_parquet_gzip_part_unico */ nome_orgao_superior, valor_pago
-FROM projeto_despesas.parquet_gzip_part_unico
-WHERE ano = '2024' AND mes = '03';
+FROM projeto_despesas.parquet_gzip_part_unico WHERE ano = '2024' AND mes = '03';
 
 -- Q4
 SELECT /* Q4_parquet_gzip_unico */ nome_orgao_superior, valor_pago
-FROM projeto_despesas.parquet_gzip_unico
-WHERE ano = '2024';
+FROM projeto_despesas.parquet_gzip_unico WHERE ano = '2024';
 SELECT /* Q4_parquet_gzip_part_unico */ nome_orgao_superior, valor_pago
-FROM projeto_despesas.parquet_gzip_part_unico
-WHERE ano = '2024';
+FROM projeto_despesas.parquet_gzip_part_unico WHERE ano = '2024';
 
 -- Q5
 SELECT /* Q5_parquet_gzip_unico */ nome_orgao_superior, valor_pago
-FROM projeto_despesas.parquet_gzip_unico
-WHERE nome_orgao_superior = 'Ministério da Educação';
+FROM projeto_despesas.parquet_gzip_unico WHERE nome_orgao_superior = 'Ministério da Educação';
 SELECT /* Q5_parquet_gzip_part_unico */ nome_orgao_superior, valor_pago
-FROM projeto_despesas.parquet_gzip_part_unico
-WHERE nome_orgao_superior = 'Ministério da Educação';
+FROM projeto_despesas.parquet_gzip_part_unico WHERE nome_orgao_superior = 'Ministério da Educação';
 
 -- Q6
-SELECT /* Q6_parquet_gzip_unico */ nome_orgao_superior,
-       SUM(valor_pago) AS total_pago, COUNT(*) AS qtd_registros
-FROM projeto_despesas.parquet_gzip_unico
-GROUP BY nome_orgao_superior
-ORDER BY total_pago DESC;
-SELECT /* Q6_parquet_gzip_part_unico */ nome_orgao_superior,
-       SUM(valor_pago) AS total_pago, COUNT(*) AS qtd_registros
-FROM projeto_despesas.parquet_gzip_part_unico
-GROUP BY nome_orgao_superior
-ORDER BY total_pago DESC;
+SELECT /* Q6_parquet_gzip_unico */ nome_orgao_superior, SUM(valor_pago) AS total_pago, COUNT(*) AS qtd_registros
+FROM projeto_despesas.parquet_gzip_unico GROUP BY nome_orgao_superior ORDER BY total_pago DESC;
+SELECT /* Q6_parquet_gzip_part_unico */ nome_orgao_superior, SUM(valor_pago) AS total_pago, COUNT(*) AS qtd_registros
+FROM projeto_despesas.parquet_gzip_part_unico GROUP BY nome_orgao_superior ORDER BY total_pago DESC;

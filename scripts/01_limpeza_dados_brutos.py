@@ -1,23 +1,19 @@
 # -*- coding: utf-8 -*-
 """
-=============================================================================
- ETAPA 1 — LIMPEZA E CONSOLIDAÇÃO DOS DADOS BRUTOS (Portal da Transparência)
-=============================================================================
- Objetivo:
-   Ler todos os CSVs mensais de Despesas (2023, 2024, 2025), corrigir os
-   problemas de origem (encoding Latin-1, separador ';', decimal com vírgula),
-   derivar as colunas de partição (ano, mes) e gerar UM ÚNICO arquivo CSV
-   limpo em UTF-8. Esse arquivo é o BASELINE canônico do experimento — todos
-   os outros layouts (Parquet) serão gerados a partir dele, garantindo que os
-   4 layouts contenham exatamente o mesmo dado.
+Limpeza e consolidação dos dados brutos (Despesas — Portal da Transparência).
 
- Saída:
-   - Um CSV consolidado e limpo (o baseline)
-   - Um relatório de validação impresso no terminal (para você PRINTAR)
+Lê os CSVs mensais de Despesas (2023–2025), corrige os problemas de origem
+(codificação ISO-8859-1, separador ';', valores monetários no padrão brasileiro),
+deriva as colunas de partição (ano, mes) e gera um único CSV consolidado em UTF-8.
 
- Pré-requisito:
-   pip install pandas
-=============================================================================
+Esse arquivo é o baseline do experimento: todos os demais layouts são gerados a
+partir dele no Athena, o que garante dado idêntico entre eles.
+
+Ao final, imprime um relatório de validação com contagem de linhas, número de
+partições e a soma de controle de valor_pago, usada para verificar a integridade
+nas etapas seguintes.
+
+Pré-requisito: pip install pandas
 """
 
 import pandas as pd
@@ -25,10 +21,8 @@ import glob
 import os
 
 # ----------------------------------------------------------------------------
-# 1) CONFIGURAÇÃO DE CAMINHOS
+# Configuração de caminhos
 # ----------------------------------------------------------------------------
-# Pasta onde estão os CSVs brutos baixados do Portal (2023, 2024, 2025 juntos).
-# Usamos string "raw" (r"...") para o Windows não interpretar as barras "\".
 PASTA_BRUTOS = r"dados_brutos"   # ajuste para o diretório dos 36 CSVs mensais
 
 # Pasta de saída (será criada ao lado da pasta de brutos, se não existir).
@@ -38,7 +32,7 @@ PASTA_SAIDA = r"dados_limpos"    # diretório de saída do baseline consolidado
 ARQUIVO_SAIDA = os.path.join(PASTA_SAIDA, "despesas_baseline.csv")
 
 # ----------------------------------------------------------------------------
-# 2) PARÂMETROS DE LEITURA (os "quirks" do CSV de origem)
+# Parâmetros de leitura (características do CSV de origem)
 # ----------------------------------------------------------------------------
 ENCODING_ORIGEM = "latin-1"   # os arquivos vêm em ISO-8859-1, não UTF-8
 SEPARADOR = ";"               # colunas separadas por ponto-e-vírgula
@@ -59,7 +53,7 @@ COLUNAS_VALOR = [
 ]
 
 # ----------------------------------------------------------------------------
-# 3) FUNÇÃO AUXILIAR: converter valor monetário brasileiro em número
+# Função auxiliar: conversão de valor monetário brasileiro para float
 # ----------------------------------------------------------------------------
 def valor_br_para_float(serie: pd.Series) -> pd.Series:
     """
@@ -79,7 +73,7 @@ def valor_br_para_float(serie: pd.Series) -> pd.Series:
     )
 
 # ----------------------------------------------------------------------------
-# 4) LOCALIZAR OS ARQUIVOS
+# Localização dos arquivos de origem
 # ----------------------------------------------------------------------------
 # Padrão dos nomes: AAAAMM_Despesas.csv  (ex.: 202501_Despesas.csv)
 padrao = os.path.join(PASTA_BRUTOS, "*_Despesas.csv")
@@ -94,9 +88,9 @@ if not arquivos:
 print(f"Encontrados {len(arquivos)} arquivos para processar.\n")
 
 # ----------------------------------------------------------------------------
-# 5) LER E LIMPAR CADA ARQUIVO
+# Leitura e limpeza de cada arquivo mensal
 # ----------------------------------------------------------------------------
-lista_dataframes = []  # vamos acumular cada mês aqui e concatenar no final
+lista_dataframes = []  # acumula cada mês para concatenação ao final
 
 for caminho in arquivos:
     nome = os.path.basename(caminho)
@@ -124,13 +118,13 @@ for caminho in arquivos:
     print(f"  OK: {nome}  ->  {len(df):,} linhas".replace(",", "."))
 
 # ----------------------------------------------------------------------------
-# 6) CONSOLIDAR TUDO EM UM ÚNICO DATAFRAME
+# Consolidação em um único conjunto
 # ----------------------------------------------------------------------------
 print("\nConsolidando todos os meses em um único conjunto...")
 df_final = pd.concat(lista_dataframes, ignore_index=True)
 
 # ----------------------------------------------------------------------------
-# 7) SALVAR O BASELINE LIMPO (UTF-8)
+# Gravação do baseline consolidado (UTF-8)
 # ----------------------------------------------------------------------------
 os.makedirs(PASTA_SAIDA, exist_ok=True)  # cria a pasta de saída se não existir
 
@@ -142,7 +136,7 @@ df_final.to_csv(
 )
 
 # ----------------------------------------------------------------------------
-# 8) RELATÓRIO DE VALIDAÇÃO  (PRINTAR ESTA SAÍDA -> evidência da Metodologia)
+# Relatório de validação
 # ----------------------------------------------------------------------------
 tamanho_mb = os.path.getsize(ARQUIVO_SAIDA) / (1024 * 1024)
 

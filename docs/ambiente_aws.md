@@ -10,7 +10,7 @@ Configuração utilizada no experimento. Ajuste os nomes de bucket/região confo
 
 ## Bucket e organização
 ```
-s3://projeto-mbed4/
+s3://<seu-bucket>/
 ├── 01-raw-csv/                     CSV consolidado (baseline)
 ├── 02-csv-particionado/            CSV particionado por ano/mês
 ├── 03-parquet-snappy/
