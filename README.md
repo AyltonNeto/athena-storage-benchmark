@@ -10,7 +10,7 @@ Estudo experimental que mede, de forma controlada, como o **formato de armazenam
 
 **Custo e desempenho não respondem proporcionalmente às mesmas otimizações.**
 
-A conversão para formato colunar reduz o volume varrido — e, portanto, o custo — em até **99,8%**, de forma consistente. Mas essa economia **não se traduz automaticamente em consultas mais rápidas**: o ganho de tempo só aparece quando a consulta ativa os mecanismos de poda (*partition pruning* / *column pruning*). Em consultas sem filtro, o tempo permaneceu indistinguível do CSV, apesar da redução massiva de bytes lidos.
+A conversão para formato colunar reduz o volume varrido — e, portanto, o custo — em **99,2% a 99,99%** nas consultas com seletividade de colunas, de forma consistente. Mas essa economia **não se traduz automaticamente em consultas mais rápidas**: o ganho de tempo só aparece quando a consulta ativa os mecanismos de poda (*partition pruning* / *column pruning*). Em consultas sem filtro, o tempo permaneceu indistinguível do CSV, apesar da redução massiva de bytes lidos.
 
 Um teste complementar de consolidação de arquivos mostrou ainda que o *small files problem* é um **fenômeno dependente de escala**: penaliza o armazenamento de forma consistente, mas seu efeito sobre o tempo só se manifesta em volumes grandes.
 
@@ -59,10 +59,29 @@ Os dois últimos pertencem ao teste de consolidação (isolam a fragmentação e
 │   └── resumo_medianas.csv             Mediana e desvio por combinação
 ├── figuras/                            As 6 figuras do artigo
 ├── docs/
-│   └── ambiente_aws.md                 Região, bucket, salvaguardas e protocolo
+│   ├── ambiente_aws.md                 Região, bucket, salvaguardas e protocolo
+│   └── img/                            Capturas de tela do ambiente (evidências de execução)
 ├── LICENSE
 └── README.md
 ```
+
+### Capturas do ambiente (`docs/img/`)
+
+Registros visuais das etapas executadas no console da AWS. Não fazem parte do artigo:
+servem como evidência de execução e apoio à reprodução por terceiros. Estão referenciadas
+em contexto no documento [`docs/ambiente_aws.md`](docs/ambiente_aws.md).
+
+| Arquivo | Etapa registrada |
+|---|---|
+| `dados_origem.png` | Página de download dos dados no Portal da Transparência |
+| `dados_brutos.png` | Os 36 arquivos CSV mensais baixados, antes do tratamento |
+| `bucket.png` | Organização dos prefixos do bucket S3 (um por layout) |
+| `bucket_file.png` | Objetos de um layout não particionado |
+| `bucket_partition.png` | Estrutura de diretórios `ano=XXXX/mes=YY` de um layout particionado |
+| `athena_config.png` | Configuração do grupo de trabalho (limite de dados varridos e cache desabilitado) |
+| `athena_tables.png` | Tabelas do database `projeto_despesas` após a geração dos layouts |
+| `athena_query.png` | Execução de uma consulta de benchmark no editor |
+| `athena_results.png` | Painel de resultados com volume varrido e tempo de execução |
 
 ---
 
