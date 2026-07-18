@@ -1,0 +1,11 @@
+layout,particionado,arquivos,tamanho_mb
+csv_base,nao,1,1748.4
+csv_particionado,sim,360,1728.1
+parquet_snappy,nao,10,114.8
+parquet_snappy_part,sim,360,168.4
+parquet_gzip,nao,10,90.8
+parquet_gzip_part,sim,360,124.5
+parquet_zstd,nao,10,92.0
+parquet_zstd_part,sim,360,127.7
+parquet_gzip_unico,nao,1,84.1
+parquet_gzip_part_unico,sim,36,92.6

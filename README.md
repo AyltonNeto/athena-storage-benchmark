@@ -56,7 +56,8 @@ Os dois últimos pertencem ao teste de consolidação (isolam a fragmentação e
 │   └── 05_layouts_unicos_gzip.sql      Teste de causalidade da fragmentação (bucketing)
 ├── resultados/
 │   ├── medicoes_completas.csv          As 5 execuções de cada combinação (60 linhas)
-│   └── resumo_medianas.csv             Mediana e desvio por combinação
+│   ├── resumo_medianas.csv             Mediana e desvio por combinação
+│   └── armazenamento_s3.csv            Tamanho no S3 e nº de arquivos por layout (Tabelas 5 e 6)
 ├── figuras/                            As 6 figuras do artigo
 ├── docs/
 │   ├── ambiente_aws.md                 Região, bucket, salvaguardas e protocolo
@@ -82,6 +83,21 @@ em contexto no documento [`docs/ambiente_aws.md`](docs/ambiente_aws.md).
 | `athena_tables.png` | Tabelas do database `projeto_despesas` após a geração dos layouts |
 | `athena_query.png` | Execução de uma consulta de benchmark no editor |
 | `athena_results.png` | Painel de resultados com volume varrido e tempo de execução |
+| `bucket_tamanhos.png` | Tamanho no S3 de cada prefixo de layout (origem da Tabela 5) |
+| `bucket_particionado_calculo.png` | Cálculo do tamanho total do layout `csv_particionado`, por ano |
+| `baseline_propriedades.png` | Propriedades do arquivo `despesas_baseline.csv` (tamanho exato em bytes) |
+
+### Origem dos dados de armazenamento
+
+Os valores de `resultados/armazenamento_s3.csv` foram coletados no console do Amazon S3 e
+correspondem às Tabelas 5 e 6 do artigo. Duas observações sobre a precisão:
+
+- Os tamanhos são reportados pelo console com **uma casa decimal**, e o arquivo preserva essa
+  precisão — nenhum valor foi refinado além do que a fonte oferece.
+- Para `csv_base`, o console exibe apenas "1.7 GB" no nível do prefixo. O valor de 1748,4 MB foi
+  obtido das propriedades do arquivo `despesas_baseline.csv` (1.833.378.156 bytes ÷ 1.048.576),
+  que é o único objeto sob `01-raw-csv/`. O mesmo critério vale para `csv_particionado`, cujo
+  total resulta da soma dos três prefixos anuais.
 
 ---
 

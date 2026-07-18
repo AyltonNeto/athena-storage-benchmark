@@ -51,9 +51,28 @@ partições no total, cada uma com 10 arquivos.
 
 ![Estrutura de diretórios de um layout particionado](img/bucket_partition.png)
 
+### Armazenamento por layout
+
+O tamanho ocupado por cada layout é conferido no console do S3, prefixo a prefixo. Esses valores
+correspondem às Tabelas 5 e 6 do artigo e estão consolidados em
+[`resultados/armazenamento_s3.csv`](../resultados/armazenamento_s3.csv).
+
+![Tamanho no S3 de cada prefixo de layout](img/bucket_tamanhos.png)
+
+Para os prefixos exibidos apenas em GB, usa-se a função "Calcular o tamanho total", que detalha os
+subprefixos — no caso do `csv_particionado`, um por ano.
+
+![Cálculo do tamanho total do layout particionado](img/bucket_particionado_calculo.png)
+
+O prefixo `01-raw-csv/` contém um único objeto, o CSV consolidado. Como o console arredonda esse
+valor para 1,7 GB, o tamanho exato foi obtido das propriedades do próprio arquivo.
+
+![Propriedades do arquivo baseline](img/baseline_propriedades.png)
+
 ## Salvaguardas de custo (recomendado)
 - **AWS Budget mensal** com alerta automático (ex.: US$ 10).
 - **Data scanned limit por consulta** no grupo de trabalho do Athena (ex.: 2 GB), para cancelar automaticamente qualquer consulta que exceda o limite. Protege contra varreduras acidentais.
+- **Limpeza do prefixo `athena-results/`:** cada execução grava seu resultado no S3. Ao longo de um benchmark com repetições, esse prefixo acumula dezenas de gigabytes e passa a gerar custo de armazenamento. Configure uma regra de ciclo de vida para expirar os objetos, ou esvazie o prefixo ao final.
 
 ![Configurações de consulta do Athena com o limite de dados varridos](img/athena_config.png)
 
