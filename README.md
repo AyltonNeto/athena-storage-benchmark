@@ -10,7 +10,7 @@ Estudo experimental que mede, de forma controlada, como o **formato de armazenam
 
 **Custo e desempenho não respondem proporcionalmente às mesmas otimizações.**
 
-A conversão para formato colunar reduz o volume varrido — e, portanto, o custo — em **99,2% a 99,99%** nas consultas com seletividade de colunas, de forma consistente. Mas essa economia **não se traduz automaticamente em consultas mais rápidas**: o ganho de tempo só aparece quando a leitura ainda responde por parcela dominante do tempo de execução. Nas consultas que devolvem milhões de linhas (Q1 e Q2), o tempo permaneceu indistinguível do CSV apesar da redução massiva de bytes lidos, porque a materialização do resultado — indiferente ao formato de origem — passa a dominar a latência. A consulta de agregação percorre os mesmos 2,38 milhões de registros e, ainda assim, executou 3,4× mais rápido em Parquet: o que separa os dois grupos é o tamanho do resultado, não o volume percorrido.
+A conversão para formato colunar reduz o volume varrido em **99,2% a 99,99%** nas consultas com seletividade de colunas, e o **custo agregado do conjunto de consultas em cerca de 98%** — a diferença entre os dois números vem da consulta que recupera todas as colunas e do piso de cobrança descrito abaixo. Mas essa economia **não se traduz automaticamente em consultas mais rápidas**: o ganho de tempo só aparece quando a leitura ainda responde por parcela dominante do tempo de execução. Nas consultas que devolvem milhões de linhas (Q1 e Q2), o tempo permaneceu indistinguível do CSV apesar da redução massiva de bytes lidos, porque a materialização do resultado — indiferente ao formato de origem — passa a dominar a latência. A consulta de agregação percorre os mesmos 2,38 milhões de registros e, ainda assim, executou 3,4× mais rápido em Parquet: o que separa os dois grupos é o tamanho do resultado, não o volume percorrido.
 
 **O custo também tem um piso.** O Athena arredonda o volume varrido para o megabyte superior e cobra no mínimo 10 MB por consulta. Nos layouts particionados, as consultas mais seletivas caem abaixo desse limiar: a redução de 99,99% no volume varrido da Q3 converte-se em 99,43% no valor faturado. A economia proporcional aos bytes lidos é determinística acima de 10 MB por consulta e nula abaixo disso.
 
@@ -56,7 +56,9 @@ Os dois últimos pertencem ao teste de consolidação (isolam a fragmentação e
 │   ├── 02_athena_setup_baseline.sql    Database + tabela externa do CSV base
 │   ├── 03_athena_geracao_layouts.sql   CTAS dos 8 layouts (formato × partição × codec)
 │   ├── 04_athena_benchmark_marcado.sql As 6 consultas × 8 layouts, com marcadores
-│   └── 05_layouts_unicos_gzip.sql      Teste de causalidade da fragmentação (bucketing)
+│   ├── 05_layouts_unicos_gzip.sql      Teste de causalidade da fragmentação (bucketing)
+│   ├── 06_analise_estatistica.py       Custos (Tabela 2), testes de Mann-Whitney e CV
+│   └── 07_gerar_figuras.py             Regenera as Figuras 3, 4 e 6 a partir das medições
 ├── resultados/
 │   ├── medicoes_completas.csv          As 5 execuções de cada combinação (60 linhas)
 │   ├── resumo_medianas.csv             Mediana e desvio por combinação (Tabelas 1, 3 e 7)
@@ -132,6 +134,30 @@ Rode os scripts SQL na ordem (02 → 03 → 04 → 05). Cada consulta de benchma
 > Os tempos reportados aqui foram obtidos na **Athena engine version 3**. Versões distintas do
 > motor adotam estratégias diferentes de planejamento, paralelismo e leitura de arquivos
 > colunares — confirme a versão do seu grupo de trabalho antes de comparar resultados.
+
+### 5. Reproduzir os números derivados
+```bash
+pip install pandas scipy
+python scripts/06_analise_estatistica.py
+```
+Recalcula, a partir de `resultados/medicoes_completas.csv`, tudo o que o artigo reporta como
+número derivado: os custos da Tabela 2 nos dois regimes (proporcional aos bytes varridos e
+faturado, com arredondamento para o MB superior e mínimo de 10 MB por consulta), os testes de
+Mann-Whitney da Tabela 4 e das seções 4.5 e 5.1, e o coeficiente de variação da seção 4.2.
+
+Todos os testes são bilaterais, sobre as 5 execuções de cada combinação. Com n = 5 por grupo,
+o menor valor-p atingível é **0,008** — valores-p elevados indicam ausência de evidência de
+diferença, não equivalência demonstrada.
+
+### 6. Regenerar as figuras
+```bash
+pip install pandas scipy matplotlib
+python scripts/07_gerar_figuras.py
+```
+Reconstrói as Figuras 3, 4 e 6 a partir de `resultados/medicoes_completas.csv` e
+`resultados/armazenamento_s3.csv`, de modo que qualquer alteração nos dados se propague às
+imagens. A Figura 4 é colorida por significância estatística, e não pelo sentido da razão das
+medianas. As Figuras 1, 2 e 5 não são regeneradas por este script.
 
 ---
 

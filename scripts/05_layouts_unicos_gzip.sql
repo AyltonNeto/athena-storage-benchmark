@@ -19,8 +19,11 @@
 --    A documentação da AWS indica o bucketing como forma de controlar o número
 --    de arquivos de saída de um CTAS. Com bucket_count = 1 obtém-se um arquivo
 --    por partição (ou um arquivo único, quando não há partição). A chave de
---    bucket deve ser uma coluna de alta cardinalidade e não pode coincidir com
---    a chave de partição; utiliza-se nome_orgao_superior.
+--    bucket não pode coincidir com a chave de partição; utiliza-se
+--    nome_orgao_superior. Com bucket_count = 1 todas as linhas caem no mesmo
+--    bucket, de modo que a cardinalidade da chave é irrelevante para o número
+--    de arquivos de saída — a coluna serve apenas para satisfazer a exigência
+--    de sintaxe do CTAS.
 --
 --  Limite do Athena: no máximo 100 combinações de partição/bucket por CTAS.
 --    parquet_gzip_part_unico: 36 partições × 1 bucket = 36 (dentro do limite).
