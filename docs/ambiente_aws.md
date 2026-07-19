@@ -6,7 +6,16 @@ Configuração utilizada no experimento. Ajuste os nomes de bucket/região confo
 - **Região:** us-east-1 (Norte da Virgínia)
 - **Armazenamento:** Amazon S3
 - **Motor de consulta:** Amazon Athena (baseado em Presto/Trino)
-- **Formato de cobrança:** US$ 5,00 por terabyte de dados varrido
+- **Grupo de trabalho:** `primary`, com atualização automática de versão
+- **Mecanismo de análise:** **Athena engine version 3**
+- **Formato de cobrança:** US$ 5,00 por terabyte de dados varrido, arredondado para o
+  megabyte superior, com **cobrança mínima de 10 MB por consulta**
+
+O registro da versão do mecanismo é relevante para a reprodutibilidade: versões distintas do
+motor adotam estratégias diferentes de planejamento, paralelismo e leitura de arquivos
+colunares, de modo que os tempos medidos neste experimento são específicos da engine v3.
+
+![Grupo de trabalho do Athena com o mecanismo de análise em uso](img/athena_engine.png)
 
 ## Origem dos dados
 

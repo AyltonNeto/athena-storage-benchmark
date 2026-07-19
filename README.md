@@ -10,19 +10,22 @@ Estudo experimental que mede, de forma controlada, como o **formato de armazenam
 
 **Custo e desempenho não respondem proporcionalmente às mesmas otimizações.**
 
-A conversão para formato colunar reduz o volume varrido — e, portanto, o custo — em **99,2% a 99,99%** nas consultas com seletividade de colunas, de forma consistente. Mas essa economia **não se traduz automaticamente em consultas mais rápidas**: o ganho de tempo só aparece quando a consulta ativa os mecanismos de poda (*partition pruning* / *column pruning*). Em consultas sem filtro, o tempo permaneceu indistinguível do CSV, apesar da redução massiva de bytes lidos.
+A conversão para formato colunar reduz o volume varrido — e, portanto, o custo — em **99,2% a 99,99%** nas consultas com seletividade de colunas, de forma consistente. Mas essa economia **não se traduz automaticamente em consultas mais rápidas**: o ganho de tempo só aparece quando a leitura ainda responde por parcela dominante do tempo de execução. Nas consultas que devolvem milhões de linhas (Q1 e Q2), o tempo permaneceu indistinguível do CSV apesar da redução massiva de bytes lidos, porque a materialização do resultado — indiferente ao formato de origem — passa a dominar a latência. A consulta de agregação percorre os mesmos 2,38 milhões de registros e, ainda assim, executou 3,4× mais rápido em Parquet: o que separa os dois grupos é o tamanho do resultado, não o volume percorrido.
 
-Um teste complementar de consolidação de arquivos mostrou ainda que o *small files problem* é um **fenômeno dependente de escala**: penaliza o armazenamento de forma consistente, mas seu efeito sobre o tempo só se manifesta em volumes grandes.
+**O custo também tem um piso.** O Athena arredonda o volume varrido para o megabyte superior e cobra no mínimo 10 MB por consulta. Nos layouts particionados, as consultas mais seletivas caem abaixo desse limiar: a redução de 99,99% no volume varrido da Q3 converte-se em 99,43% no valor faturado. A economia proporcional aos bytes lidos é determinística acima de 10 MB por consulta e nula abaixo disso.
+
+Um teste complementar de consolidação de arquivos mostrou ainda que a fragmentação **penaliza o armazenamento de forma consistente e mensurável** (consolidar reduziu 25,6% do espaço e 20,1% do volume varrido no layout particionado), mas **não produziu efeito detectável sobre o tempo** na escala avaliada — nenhuma das seis consultas apresentou diferença significativa (p ≥ 0,095). A interpretação proposta é que o *small files problem* seja um fenômeno dependente de escala, previsão que este experimento não tem porte para verificar.
 
 ---
 
 ## Desenho experimental
 
 - **Dataset:** Despesas (Execução da Despesa) do [Portal da Transparência](https://portaldatransparencia.gov.br/download-de-dados/despesas-execucao) — 2023 a 2025.
-- **Volume:** 2.381.305 registros, 47 colunas, ~1,7 GB.
-- **8 layouts** combinando formato × particionamento × codec, mais **2 layouts consolidados** para o teste de causalidade.
+- **Volume:** 2.381.305 registros, 47 colunas originais (49 após a derivação de `ano` e `mes`), ~1,7 GB.
+- **8 layouts** combinando formato × particionamento × codec, mais **2 layouts consolidados** para o teste de causalidade da fragmentação.
 - **6 consultas** desenhadas para isolar cada mecanismo (leitura colunar, poda de partição, agregação), incluindo duas contraprovas deliberadas.
-- **240 medições de tempo** (48 combinações × 5 execuções), reportadas por mediana e desvio-padrão.
+- **300 medições de tempo** (60 combinações × 5 execuções), reportadas por mediana e desvio-padrão, com teste de Mann-Whitney nas comparações controladas.
+- **Ambiente:** Amazon Athena **engine version 3**, região us-east-1, cache de resultados desabilitado.
 - **Custo total do experimento:** inferior a US$ 1.
 
 ### Matriz de layouts
@@ -56,7 +59,7 @@ Os dois últimos pertencem ao teste de consolidação (isolam a fragmentação e
 │   └── 05_layouts_unicos_gzip.sql      Teste de causalidade da fragmentação (bucketing)
 ├── resultados/
 │   ├── medicoes_completas.csv          As 5 execuções de cada combinação (60 linhas)
-│   ├── resumo_medianas.csv             Mediana e desvio por combinação
+│   ├── resumo_medianas.csv             Mediana e desvio por combinação (Tabelas 1, 3 e 7)
 │   └── armazenamento_s3.csv            Tamanho no S3 e nº de arquivos por layout (Tabelas 5 e 6)
 ├── figuras/                            As 6 figuras do artigo
 ├── docs/
@@ -79,6 +82,7 @@ em contexto no documento [`docs/ambiente_aws.md`](docs/ambiente_aws.md).
 | `bucket.png` | Organização dos prefixos do bucket S3 (um por layout) |
 | `bucket_file.png` | Objetos de um layout não particionado |
 | `bucket_partition.png` | Estrutura de diretórios `ano=XXXX/mes=YY` de um layout particionado |
+| `athena_engine.png` | Grupo de trabalho e mecanismo de análise em uso (Athena engine version 3) |
 | `athena_config.png` | Configuração do grupo de trabalho (limite de dados varridos e cache desabilitado) |
 | `athena_tables.png` | Tabelas do database `projeto_despesas` após a geração dos layouts |
 | `athena_query.png` | Execução de uma consulta de benchmark no editor |
@@ -124,6 +128,10 @@ Veja [`docs/ambiente_aws.md`](docs/ambiente_aws.md) para região, bucket, salvag
 
 ### 4. Executar no Athena
 Rode os scripts SQL na ordem (02 → 03 → 04 → 05). Cada consulta de benchmark reporta o volume varrido e o tempo; registre-os conforme o protocolo (cache desabilitado, 5 execuções por combinação).
+
+> Os tempos reportados aqui foram obtidos na **Athena engine version 3**. Versões distintas do
+> motor adotam estratégias diferentes de planejamento, paralelismo e leitura de arquivos
+> colunares — confirme a versão do seu grupo de trabalho antes de comparar resultados.
 
 ---
 
