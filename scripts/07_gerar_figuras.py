@@ -1,21 +1,27 @@
 """
-07_gerar_figuras.py — Regenera as Figuras 3, 4 e 6 do artigo a partir de
-resultados/medicoes_completas.csv e resultados/armazenamento_s3.csv.
+07_gerar_figuras.py — Gera as seis figuras do artigo a partir de
+resultados/medicoes_completas.csv e resultados/armazenamento_s3.csv, de modo
+que qualquer alteração nos dados se propague às imagens.
 
-Motivação: as três figuras traziam anotações que afirmavam mais do que os dados
-sustentam. Este script as reconstrói a partir da fonte primária, de modo que
-qualquer alteração nos dados se propague às imagens.
+  Figura 1 — poda de partições no layout csv_particionado: volume varrido por
+             consulta, em escala logarítmica, contra a linha do csv_base.
+  Figura 2 — comparação entre os três codecs nos layouts particionados:
+             painel A com volume varrido, painel B com tempo de execução.
+  Figura 3 — volume varrido e tempo de execução para o par controlado em GZIP
+             e o CSV de referência, painel A em escala logarítmica.
+  Figura 4 — efeito isolado do particionamento sobre o tempo, com razão das
+             medianas e valor-p do teste de Mann-Whitney anotados em cada
+             consulta. A cor do rótulo distingue três casos: cor cheia para
+             p < 0,05, cor esmaecida para p = 0,056 (o menor valor não
+             significativo possível com n = 5) e cinza para os demais; verde
+             indica consulta mais rápida com particionamento, vermelho, mais
+             lenta.
+  Figura 5 — efeito do particionamento sobre o espaço em disco, por codec,
+             com a inflação percentual anotada em cada par.
+  Figura 6 — teste de causalidade da consolidação: tempo por consulta em
+             quatro graus de fragmentação e armazenamento físico total, com
+             colchetes ligando os pares comparados.
 
-  Figura 3 — a anotação do painel B indicava "-99% em bytes" apontando para a Q2,
-             cuja redução é de 94,8%. Corrigida para a faixa real das duas
-             consultas sem filtro.
-  Figura 4 — as barras eram coloridas por sentido da razão das medianas
-             ("melhorou"/"piorou"), o que atribuía diferença a casos sem suporte
-             estatístico (a Q4, por exemplo, tem p = 0,222). Passam a ser
-             coloridas por significância, com o valor-p anotado em cada consulta.
-  Figura 6 — a anotação de -25,6% cobria o rótulo da barra de 360 arquivos.
-             Substituída por colchetes ligando os pares comparados, com o -7,4%
-             do par não particionado agora também explicitado.
 
 Uso:
     pip install pandas scipy matplotlib
@@ -44,8 +50,18 @@ ROTULOS = ["Q1\n3 colunas", "Q2\nSELECT *", "Q3\nfiltro mês",
 VERMELHO = "#c0392b"     # csv_base (referência)
 AZUL_CLARO = "#5b9bd5"   # não particionado
 AZUL_ESCURO = "#2e5b8a"  # particionado
-CINZA = "#95a5a6"        # sem diferença estatisticamente detectável
+CINZA = "#95a5a6"        # sem evidência de diferença
+VERDE_FRACO = "#7cb342"  # significância no limiar (p = 0,056)
+VERMELHO_FRACO = "#e57373"
 F6 = ["#a8c4e5", "#4472c4", "#e9967a", "#b22222"]
+# paleta das Figuras 1, 2 e 5
+CINZA_BARRA = "#bdbdbd"      # consulta sem poda de partição
+VERDE_ESCURO = "#1e7a34"     # poda máxima (um mês)
+VERDE_MEDIO = "#63c073"      # poda parcial (um ano)
+VERMELHO_ESCURO = "#a02020"  # linha de referência e rótulos de inflação
+AZUL_CODEC = "#3d6fc4"
+VERDE_CODEC = "#5aa64b"
+AMARELO_CODEC = "#f5b800"
 
 ALFA = 0.05  # nível de significância adotado no artigo
 
@@ -79,8 +95,101 @@ def valor_p(d, a, b, consulta):
                         alternative="two-sided")[1]
 
 
+def milhar(valor):
+    """1751.04 -> '1.751'; 47.73 -> '48' (formato dos rótulos da Figura 1)."""
+    return f"{valor:,.0f}".replace(",", ".")
+
+
 def virgula(valor, casas=2):
     return f"{valor:.{casas}f}".replace(".", ",")
+
+
+# --------------------------------------------------------------------------
+# Figura 1 — poda de partições no layout csv_particionado
+# --------------------------------------------------------------------------
+def figura_1(d):
+    mb = serie(d, "csv_particionado", "mb_varrido")
+    referencia = serie(d, "csv_base", "mb_varrido")[0]
+    # a poda só atua nas consultas que filtram pelas chaves de partição
+    poda = {"Q3": VERDE_ESCURO, "Q4": VERDE_MEDIO}
+
+    fig, ax = plt.subplots(figsize=(14.08, 7.35))
+    x = np.arange(len(CONSULTAS))
+    cores = [poda.get(q, CINZA_BARRA) for q in CONSULTAS]
+
+    ax.bar(x, mb, 0.62, color=cores, edgecolor="black", linewidth=0.8)
+    ax.axhline(referencia, color=VERMELHO_ESCURO, linestyle="--", linewidth=2.2,
+               label=f"csv_base (referência) = {milhar(referencia)} MB")
+
+    ax.set_yscale("log")
+    ax.set_ylim(1, referencia * 6)
+    ax.set_ylabel("MB varridos (escala logarítmica)")
+    ax.set_xticks(x)
+    ax.set_xticklabels(ROTULOS)
+    ax.legend(loc="center right", framealpha=0.95)
+    ax.set_axisbelow(True)
+
+    for xi, valor in zip(x, mb):
+        ax.text(xi, valor * 1.18, milhar(valor), ha="center", va="bottom",
+                fontweight="bold", fontsize=12)
+
+    ax.text(0.055, 0.94, "Poda inativa — varre quase tudo",
+            transform=ax.transAxes, color="#666666", fontsize=12)
+    ax.annotate("Poda ATIVA\n(filtro casa com a partição)",
+                xy=(0.5, 0.62), xycoords="axes fraction",
+                ha="center", va="center", color=VERDE_ESCURO,
+                fontweight="bold", fontsize=13,
+                bbox={"boxstyle": "round,pad=0.5", "facecolor": "#eef7ee",
+                      "edgecolor": VERDE_MEDIO, "linewidth": 1.5})
+
+    fig.tight_layout()
+    destino = SAIDA / "Figura1_pruning_csv.png"
+    fig.savefig(destino, dpi=100, facecolor="white")
+    plt.close(fig)
+    print(f"  {destino.name}: poda ativa na Q3 e na Q4, inativa nas demais")
+
+
+# --------------------------------------------------------------------------
+# Figura 2 — comparação entre codecs nos layouts particionados
+# --------------------------------------------------------------------------
+def figura_2(d):
+    codecs = [("parquet_snappy_part", "Snappy", AZUL_CODEC),
+              ("parquet_gzip_part", "GZIP", VERDE_CODEC),
+              ("parquet_zstd_part", "ZSTD", AMARELO_CODEC)]
+
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14.08, 11.81))
+    x = np.arange(len(CONSULTAS))
+    largura = 0.26
+
+    for i, (lay, rot, cor) in enumerate(codecs):
+        ax1.bar(x + (i - 1) * largura, serie(d, lay, "mb_varrido"), largura,
+                label=rot, color=cor, edgecolor="black", linewidth=0.4)
+    ax1.set_yscale("log")
+    ax1.set_ylabel("MB varridos (escala log)")
+    ax1.set_title("A) Volume varrido por codec", loc="left")
+    ax1.set_xticks(x)
+    ax1.set_xticklabels(ROTULOS)
+    ax1.legend(loc="upper right", framealpha=0.95)
+    ax1.set_axisbelow(True)
+
+    for i, (lay, rot, cor) in enumerate(codecs):
+        ax2.bar(x + (i - 1) * largura, serie(d, lay, "mediana_s"), largura,
+                yerr=serie(d, lay, "desvio_s"), capsize=3,
+                label=rot, color=cor, edgecolor="black", linewidth=0.4,
+                error_kw={"linewidth": 1.2})
+    ax2.set_ylabel("Tempo — mediana de 5 exec. (s)")
+    ax2.set_title("B) Tempo de execução por codec (barras de erro = desvio-padrão)",
+                  loc="left")
+    ax2.set_xticks(x)
+    ax2.set_xticklabels(ROTULOS)
+    ax2.legend(loc="upper right", framealpha=0.95)
+    ax2.set_axisbelow(True)
+
+    fig.tight_layout()
+    destino = SAIDA / "Figura2_codecs.png"
+    fig.savefig(destino, dpi=100, facecolor="white")
+    plt.close(fig)
+    print(f"  {destino.name}: Snappy, GZIP e ZSTD nos layouts particionados")
 
 
 # --------------------------------------------------------------------------
@@ -119,24 +228,11 @@ def figura_3(d):
     ax2.legend(loc="upper right", framealpha=0.95)
     ax2.set_axisbelow(True)
 
-    # faixa real de redução de bytes nas duas consultas sem filtro
-    mb = d.pivot(index="layout", columns="consulta", values="mb_varrido")
-    reducoes = [100 * (1 - mb.loc[lay, q] / mb.loc["csv_base", q])
-                for q in ("Q1", "Q2") for lay in ("parquet_gzip", "parquet_gzip_part")]
-    texto = (f"sem filtro: tempos\nindistinguíveis do CSV,\n"
-             f"apesar de −{min(reducoes):.0f}% a −{max(reducoes):.0f}% em bytes")
-    ax2.annotate(texto,
-                 xy=(x[1] + largura, serie(d, "parquet_gzip_part", "mediana_s")[1]),
-                 xytext=(x[1] + 0.75, serie(d, "csv_base", "mediana_s")[1] * 0.88),
-                 color=VERMELHO, fontweight="bold", fontsize=11,
-                 arrowprops={"arrowstyle": "->", "color": VERMELHO, "linewidth": 1.6})
-
     fig.tight_layout()
     destino = SAIDA / "Figura3_custo_vs_tempo.png"
     fig.savefig(destino, dpi=100, facecolor="white")
     plt.close(fig)
-    print(f"  {destino.name}: anotação com a faixa real "
-          f"(−{min(reducoes):.0f}% a −{max(reducoes):.0f}%)")
+    print(f"  {destino.name}: painéis A (bytes, log) e B (tempo) sem anotações")
 
 
 # --------------------------------------------------------------------------
@@ -148,6 +244,16 @@ def figura_4(d):
     dp_a, dp_b = serie(d, a, "desvio_s"), serie(d, b, "desvio_s")
     ps = np.array([valor_p(d, a, b, q) for q in CONSULTAS])
     razoes = med_b / med_a
+
+    LIMIAR = 0.056  # menor valor-p não significativo possível com n = 5
+
+    def cor_do_rotulo(razao, p):
+        piorou = razao > 1
+        if p < ALFA:
+            return VERMELHO if piorou else "#2e7d32"
+        if abs(p - LIMIAR) < 1e-9:
+            return VERMELHO_FRACO if piorou else VERDE_FRACO
+        return CINZA
 
     fig, ax = plt.subplots(figsize=(14.15, 8.31))
     x = np.arange(len(CONSULTAS))
@@ -164,37 +270,92 @@ def figura_4(d):
     ax.set_ylabel("Tempo: mediana de 5 exec. (s), escala log")
     ax.set_xticks(x)
     ax.set_xticklabels(ROTULOS)
-    ax.legend(loc="upper right", framealpha=0.95)
+    legenda_series = ax.legend(loc="upper right", framealpha=0.95)
     ax.set_axisbelow(True)
 
-    # rótulo por consulta: razão e valor-p; cor apenas quando há significância
     topo = np.maximum(med_a + dp_a, med_b + dp_b)
     for i, (razao, p) in enumerate(zip(razoes, ps)):
-        significativo = p < ALFA
-        cor = VERMELHO if (significativo and razao > 1) else (
-              "#2e7d32" if significativo else CINZA)
-        ax.text(x[i], topo[i] * 1.30,
+        ax.text(x[i], topo[i] * 1.42,
                 f"{virgula(razao)}×\np = {virgula(p, 3)}",
-                ha="center", va="bottom", color=cor,
+                ha="center", va="bottom", color=cor_do_rotulo(razao, p),
                 fontweight="bold", fontsize=11, linespacing=1.3)
 
-    n_sig = int((ps < ALFA).sum())
-    ax.text(0.012, 0.975,
-            "Razão particionado/não particionado. A cor indica significância "
-            f"estatística (Mann-Whitney, p < {virgula(ALFA)});\n"
-            f"cinza = diferença não detectável. {n_sig} de {len(CONSULTAS)} "
-            "comparações atingem significância.",
-            transform=ax.transAxes, ha="left", va="top",
-            color="#555555", fontsize=10.5, linespacing=1.4)
+    from matplotlib.patches import Patch
+    chave = [
+        Patch(facecolor=VERDE_FRACO, edgecolor="none",
+              label="mais rápida · limiar (p = 0,056)"),
+        Patch(facecolor=CINZA, edgecolor="none",
+              label="sem evidência de diferença"),
+        Patch(facecolor=VERMELHO_FRACO, edgecolor="none",
+              label="mais lenta · limiar (p = 0,056)"),
+        Patch(facecolor=VERMELHO, edgecolor="none",
+              label="mais lenta · significativa (p < 0,05)"),
+    ]
+    legenda_cores = ax.legend(
+        handles=chave, loc="upper center", bbox_to_anchor=(0.5, -0.13),
+        ncol=4, frameon=False, fontsize=10.5, handlelength=1.4,
+        handleheight=1.0, columnspacing=2.0,
+        title="Cor do rótulo — sentido do efeito e força da evidência "
+              "(0,056 é o menor valor-p não significativo possível com n = 5)")
+    legenda_cores.get_title().set_fontsize(10.5)
+    legenda_cores.get_title().set_color("#555555")
+    for texto in legenda_cores.get_texts():
+        texto.set_color("#555555")
+    ax.add_artist(legenda_series)
 
-    ax.set_ylim(top=ax.get_ylim()[1] * 2.6)
+    ax.set_ylim(top=ax.get_ylim()[1] * 1.9)
     fig.tight_layout()
     destino = SAIDA / "Figura4_efeito_particionamento.png"
     fig.savefig(destino, dpi=100, facecolor="white")
     plt.close(fig)
-    print(f"  {destino.name}: {n_sig} de 6 coloridas por significância "
-          f"({', '.join(q for q, p in zip(CONSULTAS, ps) if p < ALFA)})")
+    n_sig = int((ps < ALFA).sum())
+    n_lim = int(np.isclose(ps, LIMIAR).sum())
+    print(f"  {destino.name}: {n_sig} significativa(s), {n_lim} no limiar")
 
+
+# --------------------------------------------------------------------------
+# Figura 5 — efeito do particionamento sobre o armazenamento, por codec
+# --------------------------------------------------------------------------
+def figura_5(s):
+    pares = [("Snappy", "parquet_snappy", "parquet_snappy_part"),
+             ("GZIP", "parquet_gzip", "parquet_gzip_part"),
+             ("ZSTD", "parquet_zstd", "parquet_zstd_part")]
+    tam = s.set_index("layout")["tamanho_mb"]
+
+    fig, ax = plt.subplots(figsize=(13.34, 7.34))
+    x = np.arange(len(pares))
+    largura = 0.38
+
+    nao_part = [tam[a] for _, a, _ in pares]
+    part = [tam[b] for _, _, b in pares]
+
+    ax.bar(x - largura / 2, nao_part, largura, label="Não particionado (10 arquivos)",
+           color=AZUL_CLARO, edgecolor="black", linewidth=0.8)
+    ax.bar(x + largura / 2, part, largura, label="Particionado (360 arquivos)",
+           color=AZUL_ESCURO, edgecolor="black", linewidth=0.8)
+
+    ax.set_ylabel("Tamanho no S3 (MB)")
+    ax.set_xticks(x)
+    ax.set_xticklabels([nome for nome, _, _ in pares])
+    ax.set_ylim(0, max(part) * 1.28)
+    ax.legend(loc="upper right", framealpha=0.95)
+    ax.set_axisbelow(True)
+
+    folga = max(part) * 0.015
+    for xi, (a, b) in enumerate(zip(nao_part, part)):
+        ax.text(xi - largura / 2, a + folga, virgula(a, 1).replace(",", "."),
+                ha="center", va="bottom", fontweight="bold", fontsize=12)
+        ax.text(xi + largura / 2, b + folga, virgula(b, 1).replace(",", "."),
+                ha="center", va="bottom", fontweight="bold", fontsize=12)
+        ax.text(xi, b * 1.10, f"+{100 * (b / a - 1):.0f}%", ha="center", va="bottom",
+                color=VERMELHO_ESCURO, fontweight="bold", fontsize=14)
+
+    fig.tight_layout()
+    destino = SAIDA / "Figura5_paradoxo_armazenamento.png"
+    fig.savefig(destino, dpi=100, facecolor="white")
+    plt.close(fig)
+    inflacoes = [f"+{100 * (b / a - 1):.0f}%" for a, b in zip(nao_part, part)]
+    print(f"  {destino.name}: inflação de {', '.join(inflacoes)} por codec")
 
 # --------------------------------------------------------------------------
 # Figura 6 — teste de consolidação de arquivos
@@ -261,11 +422,12 @@ def main():
     d, s = carregar()
     SAIDA.mkdir(exist_ok=True)
     print(f"Fonte: {len(d)} combinações × 5 execuções")
+    figura_1(d)
+    figura_2(d)
     figura_3(d)
     figura_4(d)
+    figura_5(s)
     figura_6(d, s)
-    print("\nFiguras 1, 2 e 5 não são regeneradas por este script: "
-          "não apresentavam inconsistências.")
 
 
 if __name__ == "__main__":

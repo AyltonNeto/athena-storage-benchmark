@@ -54,11 +54,11 @@ Os dois últimos pertencem ao teste de consolidação (isolam a fragmentação e
 ├── scripts/
 │   ├── 01_limpeza_dados_brutos.py      Consolidação e limpeza dos 36 CSVs (Python/pandas)
 │   ├── 02_athena_setup_baseline.sql    Database + tabela externa do CSV base
-│   ├── 03_athena_geracao_layouts.sql   CTAS dos 8 layouts (formato × partição × codec)
+│   ├── 03_athena_geracao_layouts.sql   CTAS dos 7 layouts derivados do CSV base
 │   ├── 04_athena_benchmark_marcado.sql As 6 consultas × 8 layouts, com marcadores
 │   ├── 05_layouts_unicos_gzip.sql      Teste de causalidade da fragmentação (bucketing)
 │   ├── 06_analise_estatistica.py       Custos (Tabela 2), testes de Mann-Whitney e CV
-│   └── 07_gerar_figuras.py             Regenera as Figuras 3, 4 e 6 a partir das medições
+│   └── 07_gerar_figuras.py             Gera as seis figuras do artigo a partir das medições
 ├── resultados/
 │   ├── medicoes_completas.csv          As 5 execuções de cada combinação (60 linhas)
 │   ├── resumo_medianas.csv             Mediana e desvio por combinação (Tabelas 1, 3 e 7)
@@ -149,16 +149,13 @@ Todos os testes são bilaterais, sobre as 5 execuções de cada combinação. Co
 o menor valor-p atingível é **0,008** — valores-p elevados indicam ausência de evidência de
 diferença, não equivalência demonstrada.
 
-### 6. Regenerar as figuras
+### 6. Gerar as figuras
 ```bash
 pip install pandas scipy matplotlib
 python scripts/07_gerar_figuras.py
 ```
-Reconstrói as Figuras 3, 4 e 6 a partir de `resultados/medicoes_completas.csv` e
-`resultados/armazenamento_s3.csv`, de modo que qualquer alteração nos dados se propague às
-imagens. A Figura 4 é colorida por significância estatística, e não pelo sentido da razão das
-medianas. As Figuras 1, 2 e 5 não são regeneradas por este script.
-
+Produz as seis figuras do artigo a partir de `resultados/medicoes_completas.csv` e `resultados/armazenamento_s3.csv`, 
+de modo que qualquer alteração nos dados se propague às imagens. 
 ---
 
 ## Stack
